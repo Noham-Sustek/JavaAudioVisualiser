@@ -20,11 +20,17 @@ public class AudioPlayer {
     private final Object pauseLock = new Object();
     private final List<AudioDataListener> listeners = new ArrayList<>();
 
+    private volatile long totalBytes = 0;
+    private volatile long bytesPlayed = 0;
+    private volatile long seekPosition = 0;
+
     public void loadFile(File file) throws UnsupportedAudioFileException, IOException {
         stop();
         this.audioFile = file;
         AudioInputStream audioInputStream = AudioSystem.getAudioInputStream(file);
         format = audioInputStream.getFormat();
+        totalBytes = audioInputStream.getFrameLength() * format.getFrameSize();
+        bytesPlayed = 0;
         audioInputStream.close();
     }
 
@@ -46,6 +52,7 @@ public class AudioPlayer {
         if (playing) return;
 
         playing = true;
+        bytesPlayed = seekPosition;
         playbackThread = new Thread(this::playbackLoop, "AudioPlayback");
         playbackThread.start();
     }
@@ -58,12 +65,22 @@ public class AudioPlayer {
             audioStream = AudioSystem.getAudioInputStream(audioFile);
             AudioFormat fmt = audioStream.getFormat();
 
+            // Skip to seek position
+            if (seekPosition > 0) {
+                long toSkip = seekPosition;
+                while (toSkip > 0) {
+                    long skipped = audioStream.skip(toSkip);
+                    if (skipped <= 0) break;
+                    toSkip -= skipped;
+                }
+            }
+
             DataLine.Info info = new DataLine.Info(SourceDataLine.class, fmt);
             speaker = (SourceDataLine) AudioSystem.getLine(info);
             speaker.open(fmt);
             speaker.start();
 
-            byte[] buffer = new byte[4096];
+            byte[] buffer = new byte[512];
 
             while (playing) {
                 synchronized (pauseLock) {
@@ -82,6 +99,7 @@ public class AudioPlayer {
                 int bytesRead = audioStream.read(buffer, 0, buffer.length);
                 if (bytesRead == -1) break;
 
+                bytesPlayed += bytesRead;
                 speaker.write(buffer, 0, bytesRead);
 
                 for (AudioDataListener listener : listeners) {
@@ -133,6 +151,39 @@ public class AudioPlayer {
                 Thread.currentThread().interrupt();
             }
         }
+        seekPosition = 0;
+    }
+
+    public void seekTo(double progress) {
+        if (audioFile == null || totalBytes == 0) return;
+
+        // Align to frame boundary
+        long targetPosition = (long) (progress * totalBytes);
+        int frameSize = format.getFrameSize();
+        targetPosition = (targetPosition / frameSize) * frameSize;
+
+        seekPosition = targetPosition;
+        bytesPlayed = targetPosition;
+
+        // If currently playing, restart from new position
+        if (playing || paused) {
+            boolean wasPlaying = playing && !paused;
+            playing = false;
+            paused = false;
+            synchronized (pauseLock) {
+                pauseLock.notifyAll();
+            }
+            if (playbackThread != null) {
+                try {
+                    playbackThread.join(1000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            if (wasPlaying) {
+                play();
+            }
+        }
     }
 
     public boolean isPlaying() {
@@ -145,6 +196,23 @@ public class AudioPlayer {
 
     public AudioFormat getFormat() {
         return format;
+    }
+
+    public double getProgress() {
+        if (totalBytes == 0) return 0.0;
+        return (double) bytesPlayed / totalBytes;
+    }
+
+    public double getCurrentTimeSeconds() {
+        if (format == null) return 0.0;
+        double bytesPerSecond = format.getSampleRate() * format.getFrameSize();
+        return bytesPlayed / bytesPerSecond;
+    }
+
+    public double getTotalDurationSeconds() {
+        if (format == null) return 0.0;
+        double bytesPerSecond = format.getSampleRate() * format.getFrameSize();
+        return totalBytes / bytesPerSecond;
     }
 
     public void close() {

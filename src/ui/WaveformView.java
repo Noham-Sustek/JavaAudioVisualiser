@@ -9,7 +9,7 @@ public class WaveformView extends Canvas {
     private double[] waveform;
     private double[] smoothedWaveform;
     private final Object lock = new Object();
-    private static final int DISPLAY_POINTS = 512;
+    private static final int DISPLAY_POINTS = 8192;
     private static final double SMOOTHING = 0.9;
 
     public WaveformView(double width, double height) {
