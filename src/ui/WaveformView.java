@@ -11,10 +11,12 @@ public class WaveformView extends Canvas {
     private final Object lock = new Object();
     private static final int DISPLAY_POINTS = 8192;
     private static final double SMOOTHING = 0.9;
+    private ColorTheme colorTheme;
 
     public WaveformView(double width, double height) {
         super(width, height);
         smoothedWaveform = new double[DISPLAY_POINTS];
+        colorTheme = ColorTheme.getTheme(ColorTheme.ThemeType.DARK_BLUE);
         widthProperty().addListener(e -> draw());
         heightProperty().addListener(e -> draw());
         draw();
@@ -26,17 +28,21 @@ public class WaveformView extends Canvas {
         }
     }
 
+    public void setColorTheme(ColorTheme theme) {
+        this.colorTheme = theme;
+    }
+
     public void draw() {
         GraphicsContext gc = getGraphicsContext2D();
         double width = getWidth();
         double height = getHeight();
 
         // Background
-        gc.setFill(Color.rgb(20, 20, 30));
+        gc.setFill(colorTheme.getCanvasBackground());
         gc.fillRect(0, 0, width, height);
 
         // Grid lines
-        gc.setStroke(Color.rgb(50, 50, 70));
+        gc.setStroke(colorTheme.getGridLineColor());
         gc.setLineWidth(0.5);
         double midY = height / 2;
         gc.strokeLine(0, midY, width, midY);
@@ -86,9 +92,7 @@ public class WaveformView extends Canvas {
             double amplitude = Math.abs(smoothedWaveform[i]);
             double normalizedAmp = Math.min(amplitude, 1.0);
 
-            // Hue: green (0.33) → yellow (0.16) → red (0)
-            double hue = 0.33 - normalizedAmp * 0.33;
-            Color fillColor = Color.hsb(hue * 360, 0.8, 0.9, 0.4);
+            Color fillColor = colorTheme.getAmplitudeColor(normalizedAmp, 0.8, 0.9, 0.4);
 
             gc.setFill(fillColor);
             double barHeight = amplitude * (height / 2 - 10);
@@ -108,9 +112,7 @@ public class WaveformView extends Canvas {
             double amplitude = Math.abs(smoothedWaveform[i]);
             double normalizedAmp = Math.min(amplitude, 1.0);
 
-            // Hue: green (0.33) → yellow (0.16) → red (0)
-            double hue = 0.33 - normalizedAmp * 0.33;
-            Color lineColor = Color.hsb(hue * 360, 1.0, 1.0);
+            Color lineColor = colorTheme.getAmplitudeColor(normalizedAmp, 1.0, 1.0);
 
             gc.setStroke(lineColor);
             gc.strokeLine(x1, y1, x2, y2);

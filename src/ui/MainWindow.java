@@ -6,15 +6,13 @@ import javafx.animation.AnimationTimer;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
-import javafx.scene.control.Button;
-import javafx.scene.control.CheckBox;
-import javafx.scene.control.Label;
-import javafx.scene.control.Slider;
+import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 import java.io.File;
+import java.util.List;
 
 public class MainWindow {
 
@@ -23,14 +21,23 @@ public class MainWindow {
     private final Stage stage;
     private final AudioPlayer audioPlayer;
     private final AudioAnalyzer audioAnalyzer;
+    private final Settings settings;
     private WaveformView waveformView;
     private SpectrumView spectrumView;
     private Label fileLabel;
     private Button playPauseButton;
     private Button stopButton;
+    private Button openButton;
+    private MenuButton historyButton;
     private Slider progressSlider;
     private boolean isPlaying = false;
     private Label timeLabel;
+    private Label waveformLabel;
+    private Label spectrumLabel;
+    private CheckBox linearScaleCheckBox;
+    private CheckBox mirrorCheckBox;
+    private ComboBox<ColorTheme.ThemeType> themeComboBox;
+    private BorderPane root;
     private AnimationTimer animationTimer;
     private boolean sliderDragging = false;
 
@@ -41,6 +48,7 @@ public class MainWindow {
         this.stage = stage;
         this.audioPlayer = new AudioPlayer();
         this.audioAnalyzer = new AudioAnalyzer(FFT_SIZE);
+        this.settings = Settings.getInstance();
 
         audioPlayer.addAudioDataListener(audioAnalyzer);
         audioAnalyzer.setAnalysisListener((waveform, spectrum) -> {
@@ -49,6 +57,7 @@ public class MainWindow {
         });
 
         setupUI();
+        loadSettings();
         setupAnimationTimer();
     }
 
@@ -61,21 +70,35 @@ public class MainWindow {
         visualizationBox.setPadding(new Insets(10));
         VBox.setVgrow(visualizationBox, Priority.ALWAYS);
 
-        Label waveformLabel = new Label("Forme d'onde (Temps)");
-        waveformLabel.setStyle("-fx-text-fill: #AAAAAA; -fx-font-size: 12px;");
+        waveformLabel = new Label("Forme d'onde (Temps)");
 
-        Label spectrumLabel = new Label("Spectre (Frequence)");
-        spectrumLabel.setStyle("-fx-text-fill: #AAAAAA; -fx-font-size: 12px;");
+        spectrumLabel = new Label("Spectre (Frequence)");
 
-        CheckBox linearScaleCheckBox = new CheckBox("Echelle lineaire");
-        linearScaleCheckBox.setStyle("-fx-text-fill: #AAAAAA; -fx-font-size: 12px;");
-        linearScaleCheckBox.setOnAction(e -> spectrumView.setLinearScale(linearScaleCheckBox.isSelected()));
+        linearScaleCheckBox = new CheckBox("Echelle lineaire");
+        linearScaleCheckBox.setOnAction(e -> {
+            boolean selected = linearScaleCheckBox.isSelected();
+            spectrumView.setLinearScale(selected);
+            settings.setLinearScale(selected);
+        });
 
-        CheckBox mirrorCheckBox = new CheckBox("Miroir");
-        mirrorCheckBox.setStyle("-fx-text-fill: #AAAAAA; -fx-font-size: 12px;");
-        mirrorCheckBox.setOnAction(e -> spectrumView.setMirrored(mirrorCheckBox.isSelected()));
+        mirrorCheckBox = new CheckBox("Miroir");
+        mirrorCheckBox.setOnAction(e -> {
+            boolean selected = mirrorCheckBox.isSelected();
+            spectrumView.setMirrored(selected);
+            settings.setMirrored(selected);
+        });
 
-        HBox spectrumHeader = new HBox(15, spectrumLabel, linearScaleCheckBox, mirrorCheckBox);
+        themeComboBox = new ComboBox<>();
+        themeComboBox.getItems().addAll(ColorTheme.ThemeType.values());
+        themeComboBox.setOnAction(e -> {
+            ColorTheme.ThemeType selectedTheme = themeComboBox.getValue();
+            if (selectedTheme != null) {
+                settings.setTheme(selectedTheme);
+                applyTheme(ColorTheme.getTheme(selectedTheme));
+            }
+        });
+
+        HBox spectrumHeader = new HBox(15, spectrumLabel, linearScaleCheckBox, mirrorCheckBox, themeComboBox);
         spectrumHeader.setAlignment(Pos.CENTER_LEFT);
 
         VBox waveformBox = new VBox(5, waveformLabel, waveformView);
@@ -86,19 +109,18 @@ public class MainWindow {
         visualizationBox.getChildren().addAll(waveformBox, spectrumBox);
 
         // Controls
-        Button openButton = new Button("Ouvrir");
-        playPauseButton = new Button("\u25B6"); // ▶ play icon
-        stopButton = new Button("\u25A0"); // ■ stop icon
+        openButton = new Button("Ouvrir");
+        playPauseButton = new Button("\u25B6"); // Play icon
+        stopButton = new Button("\u25A0"); // Stop icon
+        historyButton = new MenuButton("Historique");
 
         playPauseButton.setDisable(true);
         stopButton.setDisable(true);
 
         fileLabel = new Label("Aucun fichier");
-        fileLabel.setStyle("-fx-text-fill: #888888;");
 
         progressSlider = new Slider(0, 1, 0);
         progressSlider.setPrefWidth(300);
-        progressSlider.setStyle("-fx-control-inner-background: #404050;");
 
         progressSlider.setOnMousePressed(e -> sliderDragging = true);
         progressSlider.setOnMouseReleased(e -> {
@@ -107,33 +129,77 @@ public class MainWindow {
         });
 
         timeLabel = new Label("0:00 / 0:00");
-        timeLabel.setStyle("-fx-text-fill: #888888; -fx-font-size: 11px;");
 
         openButton.setOnAction(e -> openFile());
         playPauseButton.setOnAction(e -> togglePlayPause());
         stopButton.setOnAction(e -> stop());
 
+        updateHistoryMenu();
+
         HBox controlsBox = new HBox(10);
         controlsBox.setAlignment(Pos.CENTER_LEFT);
         controlsBox.setPadding(new Insets(10));
-        controlsBox.getChildren().addAll(openButton, playPauseButton, stopButton, fileLabel, progressSlider, timeLabel);
-
-        String buttonStyle = "-fx-background-color: #404050; -fx-text-fill: white; -fx-padding: 8 16; -fx-font-size: 14px;";
-        openButton.setStyle(buttonStyle);
-        playPauseButton.setStyle(buttonStyle);
-        stopButton.setStyle(buttonStyle);
+        controlsBox.getChildren().addAll(openButton, playPauseButton, stopButton, fileLabel, progressSlider, timeLabel, historyButton);
 
         // Main layout
-        BorderPane root = new BorderPane();
+        root = new BorderPane();
         root.setCenter(visualizationBox);
         root.setBottom(controlsBox);
-        root.setStyle("-fx-background-color: #1a1a2e;");
 
         Scene scene = new Scene(root, 950, 750);
         stage.setTitle("Java Audio Visualiser");
         stage.setScene(scene);
         stage.setMaximized(true);
         stage.setOnCloseRequest(e -> cleanup());
+    }
+
+    private void loadSettings() {
+        // Load and apply saved settings
+        linearScaleCheckBox.setSelected(settings.isLinearScale());
+        spectrumView.setLinearScale(settings.isLinearScale());
+
+        mirrorCheckBox.setSelected(settings.isMirrored());
+        spectrumView.setMirrored(settings.isMirrored());
+
+        themeComboBox.setValue(settings.getTheme());
+        applyTheme(settings.getColorTheme());
+    }
+
+    private void applyTheme(ColorTheme theme) {
+        // Apply theme to views
+        waveformView.setColorTheme(theme);
+        spectrumView.setColorTheme(theme);
+
+        // Apply theme to UI elements
+        String bgHex = ColorTheme.toHex(theme.getBackgroundColor());
+        String btnBgHex = ColorTheme.toHex(theme.getButtonBackground());
+        String textHex = ColorTheme.toHex(theme.getTextColor());
+        String secondaryTextHex = ColorTheme.toHex(theme.getSecondaryTextColor());
+
+        root.setStyle("-fx-background-color: " + bgHex + ";");
+
+        String labelStyle = "-fx-text-fill: " + textHex + "; -fx-font-size: 12px;";
+        waveformLabel.setStyle(labelStyle);
+        spectrumLabel.setStyle(labelStyle);
+        linearScaleCheckBox.setStyle(labelStyle);
+        mirrorCheckBox.setStyle(labelStyle);
+
+        String buttonStyle = "-fx-background-color: " + btnBgHex + "; -fx-text-fill: white; -fx-padding: 8 16; -fx-font-size: 14px;";
+        openButton.setStyle(buttonStyle);
+        playPauseButton.setStyle(buttonStyle);
+        stopButton.setStyle(buttonStyle);
+        historyButton.setStyle(buttonStyle);
+
+        fileLabel.setStyle("-fx-text-fill: " + secondaryTextHex + ";");
+        timeLabel.setStyle("-fx-text-fill: " + secondaryTextHex + "; -fx-font-size: 11px;");
+        progressSlider.setStyle("-fx-control-inner-background: " + btnBgHex + ";");
+
+        // Style the combo box
+        themeComboBox.setStyle("-fx-background-color: " + btnBgHex + "; -fx-text-fill: white;");
+
+        // Force redraw
+        waveformView.draw();
+        spectrumView.draw();
     }
 
     private void setupAnimationTimer() {
@@ -178,14 +244,45 @@ public class MainWindow {
 
         File file = fileChooser.showOpenDialog(stage);
         if (file != null) {
-            try {
-                audioPlayer.loadFile(file);
-                fileLabel.setText(file.getName());
-                playPauseButton.setDisable(false);
-                stopButton.setDisable(false);
-            } catch (Exception e) {
-                fileLabel.setText("Erreur: " + e.getMessage());
-                e.printStackTrace();
+            loadFile(file);
+        }
+    }
+
+    private void loadFile(File file) {
+        try {
+            audioPlayer.loadFile(file);
+            fileLabel.setText(file.getName());
+            playPauseButton.setDisable(false);
+            stopButton.setDisable(false);
+            // Add to history
+            settings.addToSongHistory(file.getAbsolutePath());
+            updateHistoryMenu();
+        } catch (Exception e) {
+            fileLabel.setText("Erreur: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void updateHistoryMenu() {
+        historyButton.getItems().clear();
+        List<String> history = settings.getSongHistory();
+
+        if (history.isEmpty()) {
+            MenuItem emptyItem = new MenuItem("(Aucun historique)");
+            emptyItem.setDisable(true);
+            historyButton.getItems().add(emptyItem);
+        } else {
+            for (String filePath : history) {
+                File file = new File(filePath);
+                MenuItem item = new MenuItem(file.getName());
+                item.setOnAction(e -> {
+                    if (file.exists()) {
+                        loadFile(file);
+                    } else {
+                        fileLabel.setText("Fichier introuvable");
+                    }
+                });
+                historyButton.getItems().add(item);
             }
         }
     }
@@ -193,18 +290,18 @@ public class MainWindow {
     private void togglePlayPause() {
         if (isPlaying) {
             audioPlayer.pause();
-            playPauseButton.setText("\u25B6"); // ▶
+            playPauseButton.setText("\u25B6"); // Play
             isPlaying = false;
         } else {
             audioPlayer.play();
-            playPauseButton.setText("\u23F8"); // ⏸
+            playPauseButton.setText("\u23F8"); // Pause
             isPlaying = true;
         }
     }
 
     private void stop() {
         audioPlayer.stop();
-        playPauseButton.setText("\u25B6"); // ▶
+        playPauseButton.setText("\u25B6"); // Play
         isPlaying = false;
         currentWaveform = null;
         currentSpectrum = null;

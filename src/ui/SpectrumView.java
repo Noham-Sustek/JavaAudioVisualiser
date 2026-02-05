@@ -13,10 +13,12 @@ public class SpectrumView extends Canvas {
     private static final double SMOOTHING = 0.8;
     private boolean linearScale = false;
     private boolean mirrored = false;
+    private ColorTheme colorTheme;
 
     public SpectrumView(double width, double height) {
         super(width, height);
         smoothedBars = new double[NUM_BARS];
+        colorTheme = ColorTheme.getTheme(ColorTheme.ThemeType.DARK_BLUE);
         widthProperty().addListener(e -> draw());
         heightProperty().addListener(e -> draw());
         draw();
@@ -44,17 +46,21 @@ public class SpectrumView extends Canvas {
         return mirrored;
     }
 
+    public void setColorTheme(ColorTheme theme) {
+        this.colorTheme = theme;
+    }
+
     public void draw() {
         GraphicsContext gc = getGraphicsContext2D();
         double width = getWidth();
         double height = getHeight();
 
         // Background
-        gc.setFill(Color.rgb(20, 20, 30));
+        gc.setFill(colorTheme.getCanvasBackground());
         gc.fillRect(0, 0, width, height);
 
         // Grid lines
-        gc.setStroke(Color.rgb(50, 50, 70));
+        gc.setStroke(colorTheme.getGridLineColor());
         gc.setLineWidth(0.5);
         if (mirrored) {
             double centerY = height / 2;
@@ -63,7 +69,7 @@ public class SpectrumView extends Canvas {
                 gc.strokeLine(0, centerY - offset, width, centerY - offset);
                 gc.strokeLine(0, centerY + offset, width, centerY + offset);
             }
-            gc.setStroke(Color.rgb(80, 80, 100));
+            gc.setStroke(colorTheme.getCenterLineColor());
             gc.setLineWidth(1);
             gc.strokeLine(0, centerY, width, centerY);
         } else {
@@ -127,9 +133,8 @@ public class SpectrumView extends Canvas {
             double normalizedHeight = Math.min(smoothedBars[i] / 2.5, 1.0);
             double x = i * barWidth + gap / 2;
 
-            // Dynamic hue based on magnitude (green → yellow → red)
-            double hue = 0.33 - normalizedHeight * 0.33;
-            Color barColor = Color.hsb(hue * 360, 1.0, 1.0);
+            // Dynamic color based on magnitude
+            Color barColor = colorTheme.getAmplitudeColor(normalizedHeight, 1.0, 1.0);
 
             if (mirrored) {
                 double barHeight = normalizedHeight * (height / 2 - 5);
