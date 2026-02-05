@@ -1,5 +1,6 @@
 package audio;
 
+import exception.MicrophoneException;
 import util.Logger;
 
 import javax.sound.sampled.*;
@@ -36,19 +37,25 @@ public class MicrophoneCapture {
         listeners.add(listener);
     }
 
-    public boolean start() {
+    /**
+     * Start capturing audio from the microphone.
+     *
+     * @throws MicrophoneException if the microphone cannot be accessed
+     */
+    public void start() throws MicrophoneException {
         if (capturing) {
-            return true;
+            return;
+        }
+
+        DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
+
+        // Check if any microphone is available
+        if (!AudioSystem.isLineSupported(info)) {
+            logger.error("MicrophoneCapture", "No microphone found or format not supported");
+            throw new MicrophoneException(MicrophoneException.ErrorType.NOT_FOUND);
         }
 
         try {
-            DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
-
-            if (!AudioSystem.isLineSupported(info)) {
-                logger.error("MicrophoneCapture", "Microphone not supported with format: " + format);
-                return false;
-            }
-
             microphone = (TargetDataLine) AudioSystem.getLine(info);
             microphone.open(format);
             microphone.start();
@@ -58,11 +65,19 @@ public class MicrophoneCapture {
             captureThread.start();
 
             logger.info("MicrophoneCapture", "Microphone capture started (44100Hz, 16-bit, stereo)");
-            return true;
 
         } catch (LineUnavailableException e) {
             logger.error("MicrophoneCapture", "Could not access microphone", e);
-            return false;
+
+            // Determine the specific error type
+            String message = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
+            if (message.contains("busy") || message.contains("use")) {
+                throw new MicrophoneException(MicrophoneException.ErrorType.BUSY, e);
+            } else if (message.contains("denied") || message.contains("permission")) {
+                throw new MicrophoneException(MicrophoneException.ErrorType.ACCESS_DENIED, e);
+            } else {
+                throw new MicrophoneException(MicrophoneException.ErrorType.UNKNOWN, e);
+            }
         }
     }
 

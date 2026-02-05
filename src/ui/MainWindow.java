@@ -4,6 +4,7 @@ import audio.AudioAnalyzer;
 import audio.AudioPlayer;
 import audio.MicrophoneCapture;
 import exception.AudioFileException;
+import exception.MicrophoneException;
 import javafx.animation.AnimationTimer;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -374,7 +375,8 @@ public class MainWindow {
             }
 
             // Start microphone
-            if (microphoneCapture.start()) {
+            try {
+                microphoneCapture.start();
                 micButton.setSelected(true);
                 isMicMode = true;
                 fileLabel.setText("Microphone actif");
@@ -387,13 +389,14 @@ public class MainWindow {
                 progressSlider.setDisable(true);
 
                 logger.info("MainWindow", "Microphone mode enabled");
-            } else {
+            } catch (MicrophoneException e) {
                 micButton.setSelected(false);
-                fileLabel.setText("Erreur: Microphone non disponible");
+                fileLabel.setText("Erreur: " + e.getUserMessage());
+                logger.error("MainWindow", "Microphone error: " + e.getErrorType(), e);
 
                 Alert alert = new Alert(Alert.AlertType.ERROR);
                 alert.setTitle("Erreur microphone");
-                alert.setHeaderText("Impossible d'acceder au microphone");
+                alert.setHeaderText(e.getUserMessage());
                 alert.setContentText("Verifiez que votre microphone est connecte et autorise.");
                 alert.showAndWait();
             }
