@@ -167,7 +167,7 @@ public class ColorTheme {
                         Color.rgb(60, 30, 40),      // Button background
                         Color.rgb(255, 200, 200),   // Text color (light red/pink)
                         Color.rgb(150, 180, 220),   // Secondary text (light blue)
-                        0.0,                         // Deep red (low amplitude)
+                        1,                         // Deep red (low amplitude)
                         0.55                         // Light blue/cyan (high amplitude)
                 );
 

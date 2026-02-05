@@ -82,6 +82,28 @@ public class Settings {
         logger.debug("Settings", "Added to song history: " + filePath);
     }
 
+    /**
+     * Generic method to safely parse an enum value from a string.
+     * Returns the default value if parsing fails.
+     *
+     * @param <T>          the enum type
+     * @param enumClass    the enum class
+     * @param value        the string value to parse
+     * @param defaultValue the default value if parsing fails
+     * @return the parsed enum value or default
+     */
+    private <T extends Enum<T>> T parseEnum(Class<T> enumClass, String value, T defaultValue) {
+        if (value == null || value.isEmpty()) {
+            return defaultValue;
+        }
+        try {
+            return Enum.valueOf(enumClass, value);
+        } catch (IllegalArgumentException e) {
+            logger.warn("Settings", "Invalid " + enumClass.getSimpleName() + " value: " + value + ", using default");
+            return defaultValue;
+        }
+    }
+
     private void load() {
         File file = getSettingsFile();
         if (!file.exists()) {
@@ -93,13 +115,8 @@ public class Settings {
         try (InputStream is = new FileInputStream(file)) {
             props.load(is);
 
-            String themeStr = props.getProperty("theme", "DARK_BLUE");
-            try {
-                theme = ColorTheme.ThemeType.valueOf(themeStr);
-            } catch (IllegalArgumentException e) {
-                theme = ColorTheme.ThemeType.DARK_BLUE;
-                logger.warn("Settings", "Invalid theme in settings, using default: " + themeStr);
-            }
+            // Using generic method to parse enum
+            theme = parseEnum(ColorTheme.ThemeType.class, props.getProperty("theme"), ColorTheme.ThemeType.DARK_BLUE);
 
             linearScale = Boolean.parseBoolean(props.getProperty("linearScale", "false"));
             mirrored = Boolean.parseBoolean(props.getProperty("mirrored", "false"));
