@@ -10,7 +10,10 @@ public class ColorTheme {
         SUNSET("Coucher de soleil"),
         FOREST("Foret"),
         PURPLE("Violet"),
-        MONOCHROME("Monochrome");
+        MONOCHROME("Monochrome"),
+        SYNTHWAVE("Synthwave"),
+        EVA_01("EVA-01"),
+        FIRE_ICE("Feu & Glace");
 
         private final String displayName;
 
@@ -124,6 +127,48 @@ public class ColorTheme {
                         Color.rgb(140, 140, 140),   // Secondary text
                         0.0,                         // Not used (grayscale)
                         0.0                          // Not used (grayscale)
+                );
+
+            case SYNTHWAVE:
+                return new ColorTheme(
+                        type,
+                        Color.rgb(15, 5, 25),       // Deep dark purple background
+                        Color.rgb(20, 8, 35),       // Canvas background
+                        Color.rgb(80, 30, 100),     // Grid lines (purple)
+                        Color.rgb(255, 50, 150),    // Center line (hot pink)
+                        Color.rgb(60, 20, 80),      // Button background
+                        Color.rgb(255, 150, 255),   // Text color (pink)
+                        Color.rgb(200, 100, 200),   // Secondary text
+                        0.83,                        // Purple (low amplitude)
+                        0.05                         // Red-orange (high amplitude)
+                );
+
+            case EVA_01:
+                return new ColorTheme(
+                        type,
+                        Color.rgb(20, 12, 28),      // Dark purple background
+                        Color.rgb(25, 15, 35),      // Canvas background
+                        Color.rgb(115, 79, 154),    // Grid lines (#734f9a - EVA purple)
+                        Color.rgb(139, 212, 80),    // Center line (#8bd450 - EVA green)
+                        Color.rgb(70, 50, 90),      // Button background
+                        Color.rgb(139, 212, 80),    // Text color (EVA green)
+                        Color.rgb(115, 79, 154),    // Secondary text (EVA purple)
+                        0.77,                        // Purple #734f9a (low amplitude)
+                        0.26                         // Green #8bd450 (high amplitude)
+                );
+
+            case FIRE_ICE:
+                return new ColorTheme(
+                        type,
+                        Color.rgb(25, 15, 20),      // Dark red-ish background
+                        Color.rgb(30, 18, 25),      // Canvas background
+                        Color.rgb(80, 40, 50),      // Grid lines (dark red)
+                        Color.rgb(100, 150, 200),   // Center line (light blue)
+                        Color.rgb(60, 30, 40),      // Button background
+                        Color.rgb(255, 200, 200),   // Text color (light red/pink)
+                        Color.rgb(150, 180, 220),   // Secondary text (light blue)
+                        0.0,                         // Deep red (low amplitude)
+                        0.55                         // Light blue/cyan (high amplitude)
                 );
 
             case DARK_BLUE:
