@@ -2,6 +2,7 @@ package ui;
 
 import audio.AudioAnalyzer;
 import audio.AudioPlayer;
+import audio.MicrophoneCapture;
 import exception.AudioFileException;
 import javafx.animation.AnimationTimer;
 import javafx.geometry.Insets;
@@ -25,6 +26,7 @@ public class MainWindow {
     private final Stage stage;
     private final AudioPlayer audioPlayer;
     private final AudioAnalyzer audioAnalyzer;
+    private final MicrophoneCapture microphoneCapture;
     private final Settings settings;
     private WaveformView waveformView;
     private SpectrumView spectrumView;
@@ -32,9 +34,11 @@ public class MainWindow {
     private Button playPauseButton;
     private Button stopButton;
     private Button openButton;
+    private ToggleButton micButton;
     private MenuButton historyButton;
     private Slider progressSlider;
     private boolean isPlaying = false;
+    private boolean isMicMode = false;
     private Label timeLabel;
     private Label waveformLabel;
     private Label spectrumLabel;
@@ -52,6 +56,7 @@ public class MainWindow {
         this.stage = stage;
         this.audioPlayer = new AudioPlayer();
         this.audioAnalyzer = new AudioAnalyzer(FFT_SIZE);
+        this.microphoneCapture = new MicrophoneCapture();
         this.settings = Settings.getInstance();
 
         logger.info("MainWindow", "Initializing application");
@@ -60,7 +65,10 @@ public class MainWindow {
         List<String> themeNames = ThemeLoader.getAvailableThemeNames();
         logger.info("MainWindow", "Available themes: " + String.join(", ", themeNames));
 
+        // Setup audio listeners
         audioPlayer.addAudioDataListener(audioAnalyzer);
+        microphoneCapture.addAudioDataListener(audioAnalyzer);
+
         audioAnalyzer.setAnalysisListener((waveform, spectrum) -> {
             currentWaveform = waveform;
             currentSpectrum = spectrum;
@@ -129,6 +137,7 @@ public class MainWindow {
         openButton = new Button("Ouvrir");
         playPauseButton = new Button("\u25B6"); // Play icon
         stopButton = new Button("\u25A0"); // Stop icon
+        micButton = new ToggleButton("\uD83C\uDFA4"); // Microphone emoji
         historyButton = new MenuButton("Historique");
 
         playPauseButton.setDisable(true);
@@ -142,7 +151,9 @@ public class MainWindow {
         progressSlider.setOnMousePressed(e -> sliderDragging = true);
         progressSlider.setOnMouseReleased(e -> {
             sliderDragging = false;
-            audioPlayer.seekTo(progressSlider.getValue());
+            if (!isMicMode) {
+                audioPlayer.seekTo(progressSlider.getValue());
+            }
         });
 
         timeLabel = new Label("0:00 / 0:00");
@@ -150,13 +161,14 @@ public class MainWindow {
         openButton.setOnAction(e -> openFile());
         playPauseButton.setOnAction(e -> togglePlayPause());
         stopButton.setOnAction(e -> stop());
+        micButton.setOnAction(e -> toggleMicrophone());
 
         updateHistoryMenu();
 
         HBox controlsBox = new HBox(10);
         controlsBox.setAlignment(Pos.CENTER_LEFT);
         controlsBox.setPadding(new Insets(10));
-        controlsBox.getChildren().addAll(openButton, playPauseButton, stopButton, fileLabel, progressSlider, timeLabel, historyButton);
+        controlsBox.getChildren().addAll(openButton, playPauseButton, stopButton, micButton, fileLabel, progressSlider, timeLabel, historyButton);
 
         // Main layout
         root = new BorderPane();
@@ -208,6 +220,7 @@ public class MainWindow {
         openButton.setStyle(buttonStyle);
         playPauseButton.setStyle(buttonStyle);
         stopButton.setStyle(buttonStyle);
+        micButton.setStyle(buttonStyle);
         historyButton.setStyle(buttonStyle);
 
         fileLabel.setStyle("-fx-text-fill: " + secondaryTextHex + ";");
@@ -241,6 +254,10 @@ public class MainWindow {
     }
 
     private void updateProgress() {
+        if (isMicMode) {
+            timeLabel.setText("Microphone");
+            return;
+        }
         if (!sliderDragging) {
             progressSlider.setValue(audioPlayer.getProgress());
         }
@@ -256,6 +273,11 @@ public class MainWindow {
     }
 
     private void openFile() {
+        // Stop microphone if active
+        if (isMicMode) {
+            toggleMicrophone();
+        }
+
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("Ouvrir un fichier WAV");
         fileChooser.getExtensionFilters().add(
@@ -305,6 +327,10 @@ public class MainWindow {
                 File file = new File(filePath);
                 MenuItem item = new MenuItem(file.getName());
                 item.setOnAction(e -> {
+                    // Stop microphone if active
+                    if (isMicMode) {
+                        toggleMicrophone();
+                    }
                     if (file.exists()) {
                         loadFile(file);
                     } else {
@@ -317,7 +343,66 @@ public class MainWindow {
         }
     }
 
+    private void toggleMicrophone() {
+        if (isMicMode) {
+            // Stop microphone
+            microphoneCapture.stop();
+            micButton.setSelected(false);
+            isMicMode = false;
+            fileLabel.setText("Aucun fichier");
+
+            // Reset visualization
+            currentWaveform = null;
+            currentSpectrum = null;
+            waveformView.setWaveform(null);
+            waveformView.reset();
+            spectrumView.setSpectrum(null);
+            spectrumView.reset();
+            waveformView.draw();
+            spectrumView.draw();
+
+            // Re-enable file controls
+            openButton.setDisable(false);
+            historyButton.setDisable(false);
+            progressSlider.setDisable(false);
+
+            logger.info("MainWindow", "Microphone mode disabled");
+        } else {
+            // Stop any file playback first
+            if (isPlaying) {
+                stop();
+            }
+
+            // Start microphone
+            if (microphoneCapture.start()) {
+                micButton.setSelected(true);
+                isMicMode = true;
+                fileLabel.setText("Microphone actif");
+
+                // Disable file controls
+                openButton.setDisable(true);
+                playPauseButton.setDisable(true);
+                stopButton.setDisable(true);
+                historyButton.setDisable(true);
+                progressSlider.setDisable(true);
+
+                logger.info("MainWindow", "Microphone mode enabled");
+            } else {
+                micButton.setSelected(false);
+                fileLabel.setText("Erreur: Microphone non disponible");
+
+                Alert alert = new Alert(Alert.AlertType.ERROR);
+                alert.setTitle("Erreur microphone");
+                alert.setHeaderText("Impossible d'acceder au microphone");
+                alert.setContentText("Verifiez que votre microphone est connecte et autorise.");
+                alert.showAndWait();
+            }
+        }
+    }
+
     private void togglePlayPause() {
+        if (isMicMode) return;
+
         if (isPlaying) {
             audioPlayer.pause();
             playPauseButton.setText("\u25B6"); // Play
@@ -330,6 +415,8 @@ public class MainWindow {
     }
 
     private void stop() {
+        if (isMicMode) return;
+
         audioPlayer.stop();
         playPauseButton.setText("\u25B6"); // Play
         isPlaying = false;
@@ -348,6 +435,7 @@ public class MainWindow {
         logger.info("MainWindow", "Application closing");
         animationTimer.stop();
         audioPlayer.close();
+        microphoneCapture.stop();
     }
 
     public void show() {
