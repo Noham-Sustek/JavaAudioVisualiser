@@ -1,24 +1,22 @@
 package ui;
 
-import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.paint.Color;
 
-public class WaveformView extends Canvas {
+/**
+ * Visualization view for audio waveform (time domain).
+ * Extends the abstract BaseView class.
+ */
+public class WaveformView extends BaseView {
 
     private double[] waveform;
     private double[] smoothedWaveform;
-    private final Object lock = new Object();
     private static final int DISPLAY_POINTS = 8192;
     private static final double SMOOTHING = 0.9;
-    private ColorTheme colorTheme;
 
     public WaveformView(double width, double height) {
         super(width, height);
         smoothedWaveform = new double[DISPLAY_POINTS];
-        colorTheme = ColorTheme.getTheme(ColorTheme.ThemeType.DARK_BLUE);
-        widthProperty().addListener(e -> draw());
-        heightProperty().addListener(e -> draw());
         draw();
     }
 
@@ -28,26 +26,17 @@ public class WaveformView extends Canvas {
         }
     }
 
-    public void setColorTheme(ColorTheme theme) {
-        this.colorTheme = theme;
-    }
-
+    @Override
     public void draw() {
         GraphicsContext gc = getGraphicsContext2D();
         double width = getWidth();
         double height = getHeight();
 
-        // Background
-        gc.setFill(colorTheme.getCanvasBackground());
-        gc.fillRect(0, 0, width, height);
+        // Clear with theme background
+        clearCanvas();
 
-        // Grid lines
-        gc.setStroke(colorTheme.getGridLineColor());
-        gc.setLineWidth(0.5);
-        double midY = height / 2;
-        gc.strokeLine(0, midY, width, midY);
-        gc.strokeLine(0, midY - height / 4, width, midY - height / 4);
-        gc.strokeLine(0, midY + height / 4, width, midY + height / 4);
+        // Draw grid
+        drawGrid(gc);
 
         double[] samples;
         synchronized (lock) {
@@ -85,6 +74,8 @@ public class WaveformView extends Canvas {
             smoothedWaveform[i] = SMOOTHING * smoothedWaveform[i] + (1 - SMOOTHING) * downsampled[i];
         }
 
+        double midY = height / 2;
+
         // Draw filled bars with hue based on amplitude
         double barWidth = width / DISPLAY_POINTS;
         for (int i = 0; i < DISPLAY_POINTS; i++) {
@@ -119,22 +110,21 @@ public class WaveformView extends Canvas {
         }
     }
 
+    @Override
+    protected void drawGrid(GraphicsContext gc) {
+        double width = getWidth();
+        double height = getHeight();
+        double midY = height / 2;
+
+        gc.setStroke(colorTheme.getGridLineColor());
+        gc.setLineWidth(0.5);
+        gc.strokeLine(0, midY, width, midY);
+        gc.strokeLine(0, midY - height / 4, width, midY - height / 4);
+        gc.strokeLine(0, midY + height / 4, width, midY + height / 4);
+    }
+
+    @Override
     public void reset() {
         smoothedWaveform = new double[DISPLAY_POINTS];
-    }
-
-    @Override
-    public boolean isResizable() {
-        return true;
-    }
-
-    @Override
-    public double prefWidth(double height) {
-        return getWidth();
-    }
-
-    @Override
-    public double prefHeight(double width) {
-        return getHeight();
     }
 }

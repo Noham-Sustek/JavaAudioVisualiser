@@ -1,5 +1,8 @@
 package audio;
 
+import exception.AudioFileException;
+import util.Logger;
+
 import javax.sound.sampled.*;
 import java.io.File;
 import java.io.IOException;
@@ -7,6 +10,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class AudioPlayer {
+
+    private static final Logger logger = Logger.getInstance();
 
     public interface AudioDataListener {
         void onAudioData(byte[] data, int bytesRead, AudioFormat format);
@@ -24,14 +29,35 @@ public class AudioPlayer {
     private volatile long bytesPlayed = 0;
     private volatile long seekPosition = 0;
 
-    public void loadFile(File file) throws UnsupportedAudioFileException, IOException {
+    public void loadFile(File file) throws AudioFileException {
         stop();
-        this.audioFile = file;
-        AudioInputStream audioInputStream = AudioSystem.getAudioInputStream(file);
-        format = audioInputStream.getFormat();
-        totalBytes = audioInputStream.getFrameLength() * format.getFrameSize();
-        bytesPlayed = 0;
-        audioInputStream.close();
+
+        if (!file.exists()) {
+            logger.error("AudioPlayer", "File not found: " + file.getAbsolutePath());
+            throw new AudioFileException(AudioFileException.ErrorType.FILE_NOT_FOUND, file.getAbsolutePath());
+        }
+
+        if (!file.canRead()) {
+            logger.error("AudioPlayer", "Cannot read file: " + file.getAbsolutePath());
+            throw new AudioFileException(AudioFileException.ErrorType.ACCESS_DENIED, file.getAbsolutePath());
+        }
+
+        try {
+            this.audioFile = file;
+            AudioInputStream audioInputStream = AudioSystem.getAudioInputStream(file);
+            format = audioInputStream.getFormat();
+            totalBytes = audioInputStream.getFrameLength() * format.getFrameSize();
+            bytesPlayed = 0;
+            audioInputStream.close();
+            logger.info("AudioPlayer", "Loaded file: " + file.getName() +
+                    " (Format: " + format.getSampleRate() + "Hz, " + format.getChannels() + " channels)");
+        } catch (UnsupportedAudioFileException e) {
+            logger.error("AudioPlayer", "Unsupported audio format", e);
+            throw new AudioFileException(AudioFileException.ErrorType.UNSUPPORTED_FORMAT, file.getAbsolutePath(), e);
+        } catch (IOException e) {
+            logger.error("AudioPlayer", "Error reading file", e);
+            throw new AudioFileException(AudioFileException.ErrorType.CORRUPTED_FILE, file.getAbsolutePath(), e);
+        }
     }
 
     public void addAudioDataListener(AudioDataListener listener) {
@@ -46,6 +72,7 @@ public class AudioPlayer {
                 paused = false;
                 pauseLock.notifyAll();
             }
+            logger.debug("AudioPlayer", "Resumed playback");
             return;
         }
 
@@ -55,6 +82,7 @@ public class AudioPlayer {
         bytesPlayed = seekPosition;
         playbackThread = new Thread(this::playbackLoop, "AudioPlayback");
         playbackThread.start();
+        logger.info("AudioPlayer", "Started playback: " + audioFile.getName());
     }
 
     private void playbackLoop() {
@@ -89,6 +117,7 @@ public class AudioPlayer {
                             pauseLock.wait();
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
+                            logger.warn("AudioPlayer", "Playback interrupted");
                             return;
                         }
                     }
@@ -110,9 +139,14 @@ public class AudioPlayer {
             speaker.drain();
             speaker.stop();
             speaker.close();
+            logger.debug("AudioPlayer", "Playback completed");
 
-        } catch (Exception e) {
-            e.printStackTrace();
+        } catch (UnsupportedAudioFileException e) {
+            logger.error("AudioPlayer", "Unsupported audio format during playback", e);
+        } catch (IOException e) {
+            logger.error("AudioPlayer", "I/O error during playback", e);
+        } catch (LineUnavailableException e) {
+            logger.error("AudioPlayer", "Audio line unavailable", e);
         } finally {
             playing = false;
             paused = false;
@@ -125,7 +159,7 @@ public class AudioPlayer {
                 try {
                     audioStream.close();
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    logger.warn("AudioPlayer", "Error closing audio stream", e);
                 }
             }
         }
@@ -134,6 +168,7 @@ public class AudioPlayer {
     public void pause() {
         if (playing && !paused) {
             paused = true;
+            logger.debug("AudioPlayer", "Paused playback");
         }
     }
 
@@ -149,9 +184,11 @@ public class AudioPlayer {
                 playbackThread.join(1000);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                logger.warn("AudioPlayer", "Interrupted while stopping playback");
             }
         }
         seekPosition = 0;
+        logger.debug("AudioPlayer", "Stopped playback");
     }
 
     public void seekTo(double progress) {
@@ -164,6 +201,7 @@ public class AudioPlayer {
 
         seekPosition = targetPosition;
         bytesPlayed = targetPosition;
+        logger.debug("AudioPlayer", "Seeking to " + String.format("%.1f%%", progress * 100));
 
         // If currently playing, restart from new position
         if (playing || paused) {
@@ -178,6 +216,7 @@ public class AudioPlayer {
                     playbackThread.join(1000);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    logger.warn("AudioPlayer", "Interrupted while seeking");
                 }
             }
             if (wasPlaying) {
@@ -217,5 +256,6 @@ public class AudioPlayer {
 
     public void close() {
         stop();
+        logger.info("AudioPlayer", "Audio player closed");
     }
 }

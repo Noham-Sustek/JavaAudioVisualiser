@@ -1,5 +1,7 @@
 package ui;
 
+import util.Logger;
+
 import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -10,6 +12,8 @@ public class Settings {
     private static final String SETTINGS_FILE = "visualizer_settings.properties";
     private static final String HISTORY_FILE = "song_history.txt";
     private static final int MAX_HISTORY_SIZE = 20;
+
+    private static final Logger logger = Logger.getInstance();
 
     private ColorTheme.ThemeType theme = ColorTheme.ThemeType.DARK_BLUE;
     private boolean linearScale = false;
@@ -75,11 +79,13 @@ public class Settings {
             songHistory.remove(songHistory.size() - 1);
         }
         saveSongHistory();
+        logger.debug("Settings", "Added to song history: " + filePath);
     }
 
     private void load() {
         File file = getSettingsFile();
         if (!file.exists()) {
+            logger.info("Settings", "No settings file found, using defaults");
             return;
         }
 
@@ -92,13 +98,16 @@ public class Settings {
                 theme = ColorTheme.ThemeType.valueOf(themeStr);
             } catch (IllegalArgumentException e) {
                 theme = ColorTheme.ThemeType.DARK_BLUE;
+                logger.warn("Settings", "Invalid theme in settings, using default: " + themeStr);
             }
 
             linearScale = Boolean.parseBoolean(props.getProperty("linearScale", "false"));
             mirrored = Boolean.parseBoolean(props.getProperty("mirrored", "false"));
 
+            logger.info("Settings", "Settings loaded from file");
+
         } catch (IOException e) {
-            System.err.println("Could not load settings: " + e.getMessage());
+            logger.error("Settings", "Could not load settings", e);
         }
     }
 
@@ -111,8 +120,9 @@ public class Settings {
         File file = getSettingsFile();
         try (OutputStream os = new FileOutputStream(file)) {
             props.store(os, "Java Audio Visualizer Settings");
+            logger.debug("Settings", "Settings saved");
         } catch (IOException e) {
-            System.err.println("Could not save settings: " + e.getMessage());
+            logger.error("Settings", "Could not save settings", e);
         }
     }
 
@@ -129,8 +139,9 @@ public class Settings {
                     songHistory.add(line);
                 }
             }
+            logger.info("Settings", "Song history loaded: " + songHistory.size() + " entries");
         } catch (IOException e) {
-            System.err.println("Could not load song history: " + e.getMessage());
+            logger.error("Settings", "Could not load song history", e);
         }
     }
 
@@ -140,8 +151,9 @@ public class Settings {
             for (String song : songHistory) {
                 writer.println(song);
             }
+            logger.debug("Settings", "Song history saved");
         } catch (IOException e) {
-            System.err.println("Could not save song history: " + e.getMessage());
+            logger.error("Settings", "Could not save song history", e);
         }
     }
 

@@ -1,26 +1,24 @@
 package ui;
 
-import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.paint.Color;
 
-public class SpectrumView extends Canvas {
+/**
+ * Visualization view for audio spectrum (frequency domain).
+ * Extends the abstract BaseView class.
+ */
+public class SpectrumView extends BaseView {
 
     private double[] spectrum;
     private double[] smoothedBars;
-    private final Object lock = new Object();
     private static final int NUM_BARS = 256;
     private static final double SMOOTHING = 0.8;
     private boolean linearScale = false;
     private boolean mirrored = false;
-    private ColorTheme colorTheme;
 
     public SpectrumView(double width, double height) {
         super(width, height);
         smoothedBars = new double[NUM_BARS];
-        colorTheme = ColorTheme.getTheme(ColorTheme.ThemeType.DARK_BLUE);
-        widthProperty().addListener(e -> draw());
-        heightProperty().addListener(e -> draw());
         draw();
     }
 
@@ -46,38 +44,17 @@ public class SpectrumView extends Canvas {
         return mirrored;
     }
 
-    public void setColorTheme(ColorTheme theme) {
-        this.colorTheme = theme;
-    }
-
+    @Override
     public void draw() {
         GraphicsContext gc = getGraphicsContext2D();
         double width = getWidth();
         double height = getHeight();
 
-        // Background
-        gc.setFill(colorTheme.getCanvasBackground());
-        gc.fillRect(0, 0, width, height);
+        // Clear with theme background
+        clearCanvas();
 
-        // Grid lines
-        gc.setStroke(colorTheme.getGridLineColor());
-        gc.setLineWidth(0.5);
-        if (mirrored) {
-            double centerY = height / 2;
-            for (int i = 1; i <= 2; i++) {
-                double offset = i * height / 5;
-                gc.strokeLine(0, centerY - offset, width, centerY - offset);
-                gc.strokeLine(0, centerY + offset, width, centerY + offset);
-            }
-            gc.setStroke(colorTheme.getCenterLineColor());
-            gc.setLineWidth(1);
-            gc.strokeLine(0, centerY, width, centerY);
-        } else {
-            for (int i = 1; i <= 4; i++) {
-                double y = height - (i * height / 5);
-                gc.strokeLine(0, y, width, y);
-            }
-        }
+        // Draw grid
+        drawGrid(gc);
 
         double[] data;
         synchronized (lock) {
@@ -159,22 +136,34 @@ public class SpectrumView extends Canvas {
         }
     }
 
+    @Override
+    protected void drawGrid(GraphicsContext gc) {
+        double width = getWidth();
+        double height = getHeight();
+
+        gc.setStroke(colorTheme.getGridLineColor());
+        gc.setLineWidth(0.5);
+
+        if (mirrored) {
+            double centerY = height / 2;
+            for (int i = 1; i <= 2; i++) {
+                double offset = i * height / 5;
+                gc.strokeLine(0, centerY - offset, width, centerY - offset);
+                gc.strokeLine(0, centerY + offset, width, centerY + offset);
+            }
+            gc.setStroke(colorTheme.getCenterLineColor());
+            gc.setLineWidth(1);
+            gc.strokeLine(0, centerY, width, centerY);
+        } else {
+            for (int i = 1; i <= 4; i++) {
+                double y = height - (i * height / 5);
+                gc.strokeLine(0, y, width, y);
+            }
+        }
+    }
+
+    @Override
     public void reset() {
         smoothedBars = new double[NUM_BARS];
-    }
-
-    @Override
-    public boolean isResizable() {
-        return true;
-    }
-
-    @Override
-    public double prefWidth(double height) {
-        return getWidth();
-    }
-
-    @Override
-    public double prefHeight(double width) {
-        return getHeight();
     }
 }

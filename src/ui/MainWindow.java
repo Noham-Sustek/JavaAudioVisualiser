@@ -2,6 +2,7 @@ package ui;
 
 import audio.AudioAnalyzer;
 import audio.AudioPlayer;
+import exception.AudioFileException;
 import javafx.animation.AnimationTimer;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -10,6 +11,8 @@ import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import util.Logger;
+import util.ThemeLoader;
 
 import java.io.File;
 import java.util.List;
@@ -17,6 +20,7 @@ import java.util.List;
 public class MainWindow {
 
     private static final int FFT_SIZE = 8192;
+    private static final Logger logger = Logger.getInstance();
 
     private final Stage stage;
     private final AudioPlayer audioPlayer;
@@ -50,6 +54,12 @@ public class MainWindow {
         this.audioAnalyzer = new AudioAnalyzer(FFT_SIZE);
         this.settings = Settings.getInstance();
 
+        logger.info("MainWindow", "Initializing application");
+
+        // Log available themes using reflection
+        List<String> themeNames = ThemeLoader.getAvailableThemeNames();
+        logger.info("MainWindow", "Available themes: " + String.join(", ", themeNames));
+
         audioPlayer.addAudioDataListener(audioAnalyzer);
         audioAnalyzer.setAnalysisListener((waveform, spectrum) -> {
             currentWaveform = waveform;
@@ -59,6 +69,8 @@ public class MainWindow {
         setupUI();
         loadSettings();
         setupAnimationTimer();
+
+        logger.info("MainWindow", "Application initialized successfully");
     }
 
     private void setupUI() {
@@ -79,6 +91,7 @@ public class MainWindow {
             boolean selected = linearScaleCheckBox.isSelected();
             spectrumView.setLinearScale(selected);
             settings.setLinearScale(selected);
+            logger.debug("MainWindow", "Linear scale: " + selected);
         });
 
         mirrorCheckBox = new CheckBox("Miroir");
@@ -86,6 +99,7 @@ public class MainWindow {
             boolean selected = mirrorCheckBox.isSelected();
             spectrumView.setMirrored(selected);
             settings.setMirrored(selected);
+            logger.debug("MainWindow", "Mirror mode: " + selected);
         });
 
         themeComboBox = new ComboBox<>();
@@ -94,7 +108,10 @@ public class MainWindow {
             ColorTheme.ThemeType selectedTheme = themeComboBox.getValue();
             if (selectedTheme != null) {
                 settings.setTheme(selectedTheme);
-                applyTheme(ColorTheme.getTheme(selectedTheme));
+                // Use ThemeLoader (reflection) to load the theme
+                ColorTheme theme = ThemeLoader.loadThemeByName(selectedTheme.getDisplayName());
+                applyTheme(theme);
+                logger.info("MainWindow", "Theme changed to: " + selectedTheme.getDisplayName());
             }
         });
 
@@ -163,6 +180,9 @@ public class MainWindow {
 
         themeComboBox.setValue(settings.getTheme());
         applyTheme(settings.getColorTheme());
+
+        logger.info("MainWindow", "Settings loaded - Theme: " + settings.getTheme().getDisplayName() +
+                ", Linear: " + settings.isLinearScale() + ", Mirror: " + settings.isMirrored());
     }
 
     private void applyTheme(ColorTheme theme) {
@@ -257,9 +277,18 @@ public class MainWindow {
             // Add to history
             settings.addToSongHistory(file.getAbsolutePath());
             updateHistoryMenu();
-        } catch (Exception e) {
-            fileLabel.setText("Erreur: " + e.getMessage());
-            e.printStackTrace();
+            logger.info("MainWindow", "File loaded: " + file.getName());
+        } catch (AudioFileException e) {
+            // Display user-friendly error message
+            fileLabel.setText("Erreur: " + e.getUserMessage());
+            logger.error("MainWindow", "Failed to load file: " + file.getAbsolutePath(), e);
+
+            // Show alert dialog for better UX
+            Alert alert = new Alert(Alert.AlertType.ERROR);
+            alert.setTitle("Erreur de chargement");
+            alert.setHeaderText(e.getUserMessage());
+            alert.setContentText("Fichier: " + file.getName());
+            alert.showAndWait();
         }
     }
 
@@ -280,6 +309,7 @@ public class MainWindow {
                         loadFile(file);
                     } else {
                         fileLabel.setText("Fichier introuvable");
+                        logger.warn("MainWindow", "File not found in history: " + filePath);
                     }
                 });
                 historyButton.getItems().add(item);
@@ -315,6 +345,7 @@ public class MainWindow {
     }
 
     private void cleanup() {
+        logger.info("MainWindow", "Application closing");
         animationTimer.stop();
         audioPlayer.close();
     }
