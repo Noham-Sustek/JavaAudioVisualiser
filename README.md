@@ -1,86 +1,118 @@
-# Java Audio Visualiser
+# C Audio Visualiser
 
-Un visualiseur audio en temps reel pour fichiers WAV, developpe en JavaFX.
+Un visualiseur audio en temps reel pour fichiers WAV et microphone, developpe en C.
+Portage de la version Java/JavaFX (branche `master`).
 
-![Java](https://img.shields.io/badge/Java-25-orange)
-![JavaFX](https://img.shields.io/badge/JavaFX-25-blue)
+![C](https://img.shields.io/badge/C-11-blue)
+![raylib](https://img.shields.io/badge/raylib-5.5-black)
+![miniaudio](https://img.shields.io/badge/miniaudio-0.11.21-orange)
 
 ## Fonctionnalites
 
 - **Visualisation en temps reel** de la forme d'onde (domaine temporel) et du spectre (domaine frequentiel)
-- **6 themes de couleurs** : Bleu sombre, Ocean, Coucher de soleil, Foret, Violet, Monochrome
+- **Entree microphone** : visualisation du son capte en direct
+- **9 themes de couleurs** : Bleu sombre, Ocean, Coucher de soleil, Foret, Violet, Monochrome, Synthwave, EVA-01, Feu & Glace
 - **Persistence des parametres** : les options sont sauvegardees et restaurees au redemarrage
 - **Historique des morceaux** : acces rapide aux 20 derniers fichiers joues
 - **Modes d'affichage** : echelle lineaire/logarithmique, mode miroir
+- **Glisser-deposer** d'un fichier WAV sur la fenetre, ou passage en argument de ligne de commande
+
+## Compilation
+
+Prerequis : CMake >= 3.20 et un compilateur C (MSVC, GCC ou Clang).
+Les dependances (raylib, raygui, miniaudio) sont telechargees automatiquement par CMake.
+
+```sh
+cmake -S . -B build
+cmake --build build --config Release
+```
+
+Lancement :
+
+```sh
+# Windows
+build\Release\CAudioVisualiser.exe ["assets\Devil May Cry 3 - Devils Never Cry.wav"]
+
+# Linux / macOS
+./build/CAudioVisualiser [fichier.wav]
+```
+
+Sous Linux, la boite de dialogue d'ouverture utilise `zenity` et raylib necessite les
+paquets de developpement X11/OpenGL (ex. `libx11-dev libxrandr-dev libxinerama-dev
+libxcursor-dev libxi-dev libgl1-mesa-dev`).
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        MainWindow (UI)                          │
+│                    main_window (UI, raylib + raygui)            │
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────┐ │
 │  │ WaveformView │  │ SpectrumView │  │ Controles (boutons,   │ │
-│  │ (Canvas)     │  │ (Canvas)     │  │ slider, historique)   │ │
+│  │  (BaseView)  │  │  (BaseView)  │  │ slider, historique)   │ │
 │  └──────────────┘  └──────────────┘  └───────────────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
          ▲                   ▲
-         │    double[] waveform, spectrum
+         │    float waveform[], spectrum[]   (thread UI, 60 FPS)
          │                   │
 ┌─────────────────────────────────────────────────────────────────┐
 │                      AudioAnalyzer                              │
-│            (Traitement FFT, analyse frequentielle)              │
+│       (buffer circulaire protege par mutex + FFT a la demande)  │
 └─────────────────────────────────────────────────────────────────┘
-         ▲
-         │    byte[] donnees audio
-         │
-┌─────────────────────────────────────────────────────────────────┐
-│                       AudioPlayer                               │
-│        (charge WAV, lecture audio, streaming)                   │
-└─────────────────────────────────────────────────────────────────┘
-         ▲
-         │
-    ┌────┴────┐
-    │ Fichier │
-    │   WAV   │
+         ▲                                     ▲
+         │  AudioDataListener (thread audio)   │
+┌──────────────────────────┐     ┌──────────────────────────┐
+│       AudioPlayer        │     │    MicrophoneCapture     │
+│ (decodage WAV, lecture,  │     │  (capture 44100 Hz,      │
+│  pause, stop, seek)      │     │   stereo, float)         │
+└──────────────────────────┘     └──────────────────────────┘
+         ▲                                     ▲
+    ┌────┴────┐                          ┌─────┴─────┐
+    │ Fichier │                          │ Microphone│
+    │   WAV   │                          └───────────┘
     └─────────┘
 ```
 
 ## Structure du Projet
 
 ```
+CMakeLists.txt                  # Build + recuperation des dependances
+assets/                         # Fichier WAV d'exemple
 src/
-├── Main.java                    # Point d'entree JavaFX
+├── main.c                      # Point d'entree
 ├── audio/
-│   ├── AudioAnalyzer.java       # Analyse FFT et extraction des donnees
-│   └── AudioPlayer.java         # Lecture audio et streaming
-├── exception/
-│   └── AudioFileException.java  # Exception personnalisee
+│   ├── audio_listener.h        # Callback AudioDataListener
+│   ├── audio_analyzer.c/h      # Buffer circulaire et analyse FFT
+│   ├── audio_player.c/h        # Lecture audio (miniaudio)
+│   ├── microphone_capture.c/h  # Capture microphone (miniaudio)
+│   └── miniaudio_impl.c        # Implementation de miniaudio
+├── error/
+│   └── audio_errors.c/h        # Types d'erreur fichier / microphone
 ├── fft/
-│   └── FFT.java                 # Algorithme Fast Fourier Transform
+│   └── fft.c/h                 # Algorithme Fast Fourier Transform
 ├── ui/
-│   ├── BaseView.java            # Classe abstraite pour les vues
-│   ├── ColorTheme.java          # Definition des themes de couleurs
-│   ├── MainWindow.java          # Fenetre principale et controles
-│   ├── Settings.java            # Gestion de la persistence
-│   ├── SpectrumView.java        # Visualisation du spectre
-│   └── WaveformView.java        # Visualisation de la forme d'onde
+│   ├── base_view.h             # "Classe abstraite" des vues (vtable)
+│   ├── color_theme.c/h         # Definition des themes de couleurs
+│   ├── main_window.c/h         # Fenetre principale et controles
+│   ├── settings.c/h            # Gestion de la persistence
+│   ├── spectrum_view.c/h       # Visualisation du spectre
+│   └── waveform_view.c/h       # Visualisation de la forme d'onde
 └── util/
-    ├── Cache.java               # Classe generique de cache
-    ├── Logger.java              # Systeme de logging fichier
-    └── ThemeLoader.java         # Chargement des themes par reflexion
+    ├── config.c/h              # Dossier de configuration utilisateur
+    ├── file_dialog.c/h         # Boite de dialogue native d'ouverture
+    └── logger.c/h              # Systeme de logging fichier
 ```
 
 ## Flux de Donnees
 
 ### 1. Chargement d'un fichier
 ```
-Utilisateur clique "Ouvrir" → FileChooser → AudioPlayer.loadFile()
+Clic "Ouvrir" → boite de dialogue native → audio_player_load_file()
                                                    │
                                                    ▼
                                      Validation du fichier
                                                    │
                                                    ▼
-                                     Lecture du format audio
+                                     Initialisation decodeur + sortie audio
                                                    │
                                                    ▼
                                      Ajout a l'historique
@@ -88,108 +120,86 @@ Utilisateur clique "Ouvrir" → FileChooser → AudioPlayer.loadFile()
 
 ### 2. Lecture Audio
 ```
-Clic sur Play → AudioPlayer.play()
-                      │
-                      ▼
-           Creation du thread de lecture
-                      │
-                      ▼
-        ┌─────────────────────────────┐
-        │     Boucle de lecture       │
-        │  - Lire 512 octets          │
-        │  - Envoyer aux haut-parleurs│
-        │  - Notifier AudioAnalyzer   │
-        └─────────────────────────────┘
+Clic sur Play → audio_player_play() → demarrage du peripherique miniaudio
+                                              │
+                                              ▼
+                              ┌───────────────────────────────┐
+                              │  Callback audio (thread audio) │
+                              │  - Lire 512 frames du decodeur │
+                              │  - Envoyer aux haut-parleurs   │
+                              │  - Notifier AudioAnalyzer      │
+                              └───────────────────────────────┘
 ```
 
 ### 3. Analyse Audio (FFT)
 ```
-AudioAnalyzer recoit byte[]
+AudioAnalyzer recoit float[] (thread audio)
            │
            ▼
-   Conversion en samples (double[])
+   Moyenne des canaux → buffer circulaire (8192 samples)
            │
-           ▼
-   Accumulation dans buffer circulaire (8192 samples)
-           │
-           ▼
-   Application de la FFT
+           ▼   (thread UI, chaque frame)
+   Copie ordonnee du buffer + FFT
            │
            ├──► Donnees waveform (domaine temporel)
            │
            └──► Donnees spectrum (domaine frequentiel)
-           │
-           ▼
-   Notification de MainWindow
 ```
+
+La FFT est calculee sur le thread UI plutot que dans le callback audio : le thread
+audio ne fait que copier des echantillons, ce qui evite tout risque de craquement.
 
 ### 4. Rendu (60 FPS)
 ```
-AnimationTimer (chaque frame)
+Boucle principale raylib (chaque frame)
            │
            ▼
-   WaveformView.draw()
-   - Effacer le canvas
-   - Dessiner la grille
-   - Appliquer le lissage
-   - Dessiner barres + ligne colorees
+   base_view_draw(waveform)
+   - Effacer la zone
+   - Dessiner la grille       (vtable->draw_grid)
+   - Lissage + barres + ligne (vtable->draw_content)
            │
            ▼
-   SpectrumView.draw()
-   - Effacer le canvas
-   - Dessiner la grille
+   base_view_draw(spectrum)
    - Binning frequentiel (256 barres)
    - Echelle lineaire ou log
    - Mode miroir (optionnel)
-   - Dessiner les barres colorees
 ```
 
-## Composants Principaux
+## Correspondance Java → C
 
-### FFT (Fast Fourier Transform)
-Transforme les donnees du domaine temporel vers le domaine frequentiel :
-- **Entree** : Amplitude au cours du temps (waveform)
-- **Sortie** : Amplitude par frequence (spectrum)
-- **Algorithme** : Cooley-Tukey iteratif avec fenetre de Hanning
+| Java | C |
+|------|---|
+| Classe abstraite `BaseView` | `struct BaseView` + table de fonctions virtuelles (`BaseViewVTable`) |
+| Interface `AudioDataListener` | Pointeur de fonction + `user_data` |
+| `AudioFileException`, `MicrophoneException` | Structs d'erreur remplies par les fonctions, qui retournent `false` |
+| Enum `ThemeType` + reflexion (`ThemeLoader`) | Enum + table statique de themes, recherche par nom |
+| Methode generique `parseEnum` | `color_theme_parse()` |
+| `synchronized` | `ma_mutex` (miniaudio) |
+| JavaFX `Canvas` / `AnimationTimer` | raylib (`BeginDrawing` / `EndDrawing` a 60 FPS) |
+| Controles JavaFX | raygui (interface en mode immediat) |
+| `javax.sound.sampled` | miniaudio |
+| `Properties` | Fichier `cle=valeur` lu/ecrit a la main |
 
-### Themes de Couleurs
+## Themes de Couleurs
 Chaque theme definit :
-- `backgroundColor` : Fond de la fenetre
-- `canvasBackground` : Zone de visualisation
-- `gridLineColor` : Lignes de grille
-- `textColor` : Labels
-- `hueStart`, `hueEnd` : Gradient de couleur selon l'amplitude
+- `background_color` : Fond de la fenetre
+- `canvas_background` : Zone de visualisation
+- `grid_line_color` : Lignes de grille
+- `text_color` : Labels
+- `hue_start`, `hue_end` : Gradient de couleur selon l'amplitude
 
 La couleur varie selon l'amplitude :
-- Amplitude faible → `hueStart` (ex: vert/cyan)
-- Amplitude forte → `hueEnd` (ex: rouge/magenta)
+- Amplitude faible → `hue_start` (ex: vert/cyan)
+- Amplitude forte → `hue_end` (ex: rouge/magenta)
 
-### Persistence des Parametres
+## Persistence des Parametres
 ```
-~/.java-audio-visualizer/
+~/.c-audio-visualizer/              (%USERPROFILE% sous Windows)
 ├── visualizer_settings.properties  # Theme, echelle, miroir
 ├── song_history.txt                # Historique des morceaux
 └── visualizer.log                  # Fichier de logs
 ```
-
-## Classes et Responsabilites
-
-| Classe | Responsabilite |
-|--------|----------------|
-| `Main` | Point d'entree JavaFX |
-| `MainWindow` | Interface utilisateur, coordination |
-| `AudioPlayer` | Chargement WAV, lecture/pause/stop/seek |
-| `AudioAnalyzer` | Conversion audio → waveform + spectrum via FFT |
-| `FFT` | Algorithme Cooley-Tukey avec fenetre de Hanning |
-| `BaseView` | Classe abstraite pour les vues canvas |
-| `WaveformView` | Rendu de la forme d'onde |
-| `SpectrumView` | Rendu du spectre frequentiel |
-| `ColorTheme` | Definition des couleurs par theme |
-| `Settings` | Sauvegarde/chargement des preferences |
-| `Logger` | Ecriture des logs avec horodatage |
-| `ThemeLoader` | Decouverte des themes par reflexion |
-| `Cache<K,V>` | Cache generique avec expiration |
-| `AudioFileException` | Exception personnalisee pour erreurs audio |
 
 ## Interactions Utilisateur
 
@@ -198,67 +208,7 @@ La couleur varie selon l'amplitude :
 | **Ouvrir** | Dialogue de selection de fichier WAV |
 | **▶ / ⏸** | Lecture / Pause |
 | **■** | Arret et reinitialisation |
-| **Slider de progression** | Navigation dans le morceau |
-| **Historique** | Menu deroulant des morceaux recents |
-| **Menu theme** | Changement de theme (persiste) |
-| **Echelle lineaire** | Bascule echelle lineaire/logarithmique |
-| **Miroir** | Bascule affichage miroir du spectre |
-
-## Elements du Cours Implementes
-
-### Objet General
-- **Classes** : 12 classes au total
-- **Encapsulation** : Champs prives avec getters/setters
-- **Classe abstraite** : `BaseView` avec methodes `draw()`, `reset()`, `drawGrid()`
-- **Interfaces** : `AudioDataListener`, `AnalysisListener`
-
-### Generiques
-- **Classe generique** : `Cache<K, V>` avec parametres de type
-
-### Exceptions
-- **Exception personnalisee** : `AudioFileException` avec types d'erreurs
-- **Gestion des erreurs** : Try-catch, try-with-resources, messages utilisateur
-
-### Reflexion
-- **Usage** : `ThemeLoader` utilise `Class.forName()`, `getMethod()`, `invoke()`
-
-### Fonctionnel
-- **Lambdas** : 10+ expressions lambda pour les listeners et callbacks
-- **Reference de methode** : `this::playbackLoop`
-
-### Persistence
-- **Fichiers** : Properties pour les parametres, texte pour l'historique
-
-### Logging
-- **Fichier de log** : `visualizer.log` avec niveaux DEBUG, INFO, WARN, ERROR
-
-## Compilation et Execution
-
-### Prerequis
-- Java 25 (OpenJDK)
-- JavaFX SDK 25
-
-### Compilation
-```bash
-JAVA_HOME="/path/to/jdk-25"
-JAVAFX_PATH="/path/to/javafx-sdk-25/lib"
-
-$JAVA_HOME/bin/javac \
-    --module-path $JAVAFX_PATH \
-    --add-modules javafx.controls,javafx.graphics \
-    -d out/production/JavaAudioVisualiser \
-    src/**/*.java
-```
-
-### Execution
-```bash
-$JAVA_HOME/bin/java \
-    --module-path $JAVAFX_PATH \
-    --add-modules javafx.controls,javafx.graphics \
-    -cp out/production/JavaAudioVisualiser \
-    Main
-```
-
-## Auteur
-
-Projet realise dans le cadre du cours "Langage de developpement objet".
+| **Micro** | Active / desactive la visualisation du microphone |
+| **Slider** | Deplacement dans le morceau |
+| **Historique** | Liste des 20 derniers fichiers |
+| **Glisser-deposer** | Charge le fichier depose sur la fenetre |
