@@ -13,26 +13,26 @@ static void draw_content(BaseView *base) {
 
     if (data == NULL || length == 0) return;
 
+    // Bar edges in FFT bins. Bin 0 (DC offset) carries no frequency, skip it.
+    // Every bar gets at least one bin of its own: otherwise the log curve maps
+    // several low bars onto the same bin and they move together.
+    int edges[SPECTRUM_NUM_BARS + 1];
+    edges[0] = 1;
+    for (int i = 1; i <= SPECTRUM_NUM_BARS; i++) {
+        double t = (double) i / SPECTRUM_NUM_BARS;
+        int edge = view->linear_scale
+                   ? (int) (t * length)                 // Linear scale: equal frequency width per bar
+                   : (int) (pow(t, LOG_POWER) * length); // Logarithmic scale: more resolution for low frequencies
+
+        if (edge < edges[i - 1] + 1) edge = edges[i - 1] + 1;
+        if (edge > length - (SPECTRUM_NUM_BARS - i)) edge = length - (SPECTRUM_NUM_BARS - i);
+        edges[i] = edge;
+    }
+
     // Frequency binning
     for (int i = 0; i < SPECTRUM_NUM_BARS; i++) {
-        int start_idx, end_idx;
-
-        if (view->linear_scale) {
-            // Linear scale: equal frequency width per bar
-            start_idx = (int) ((double) i / SPECTRUM_NUM_BARS * length);
-            end_idx = (int) ((double) (i + 1) / SPECTRUM_NUM_BARS * length);
-        } else {
-            // Logarithmic scale: more resolution for low frequencies
-            double t0 = (double) i / SPECTRUM_NUM_BARS;
-            double t1 = (double) (i + 1) / SPECTRUM_NUM_BARS;
-            start_idx = (int) (pow(t0, LOG_POWER) * length);
-            end_idx = (int) (pow(t1, LOG_POWER) * length);
-        }
-
-        if (start_idx > length - 1) start_idx = length - 1;
-        if (start_idx < 0) start_idx = 0;
-        if (end_idx > length) end_idx = length;
-        if (end_idx < start_idx + 1) end_idx = start_idx + 1;
+        int start_idx = edges[i];
+        int end_idx = edges[i + 1];
 
         float sum = 0;
         for (int j = start_idx; j < end_idx; j++) {

@@ -14,6 +14,7 @@ typedef struct {
     const float *waveform;      // Not owned, NULL when nothing is playing
     int waveform_length;
     float smoothed_waveform[WAVEFORM_DISPLAY_POINTS];
+    float peak_envelope;        // Recent peak, drives the automatic gain
 } WaveformView;
 
 void waveform_view_init(WaveformView *view);

@@ -4,6 +4,9 @@
 #include <string.h>
 
 #define SMOOTHING 0.9f
+#define TARGET_PEAK 0.9f     // Fraction of the half-height the recent peak should reach
+#define MAX_GAIN 8.0f        // Cap so silence/noise is not blown up
+#define PEAK_RELEASE 0.995f  // Per-frame decay of the peak envelope (~3 s at 60 FPS)
 
 static void draw_content(BaseView *base) {
     WaveformView *view = (WaveformView *) base;
@@ -44,10 +47,29 @@ static void draw_content(BaseView *base) {
         view->smoothed_waveform[i] = SMOOTHING * view->smoothed_waveform[i] + (1 - SMOOTHING) * value;
     }
 
+    // Automatic gain: temporal smoothing averages uncorrelated frames and shrinks
+    // the signal a lot, so scale the display to the recent peak.
+    // Peak envelope follows rises instantly and decays slowly to avoid pumping.
+    float peak = 0;
+    for (int i = 0; i < WAVEFORM_DISPLAY_POINTS; i++) {
+        peak = fmaxf(peak, fabsf(view->smoothed_waveform[i]));
+    }
+    if (peak > view->peak_envelope) {
+        view->peak_envelope = peak;
+    } else {
+        view->peak_envelope = PEAK_RELEASE * view->peak_envelope + (1 - PEAK_RELEASE) * peak;
+    }
+    float gain = fminf(TARGET_PEAK / fmaxf(view->peak_envelope, 1e-6f), MAX_GAIN);
+
+    static float display[WAVEFORM_DISPLAY_POINTS];
+    for (int i = 0; i < WAVEFORM_DISPLAY_POINTS; i++) {
+        display[i] = fmaxf(-1.0f, fminf(view->smoothed_waveform[i] * gain, 1.0f));
+    }
+
     // Draw filled bars with hue based on amplitude
     float bar_width = width / WAVEFORM_DISPLAY_POINTS;
     for (int i = 0; i < WAVEFORM_DISPLAY_POINTS; i++) {
-        float amplitude = fabsf(view->smoothed_waveform[i]);
+        float amplitude = fabsf(display[i]);
         float normalized = fminf(amplitude, 1.0f);
         Color fill = color_theme_amplitude_color(base->color_theme, normalized, 0.8f, 0.9f, 0.4f);
 
@@ -58,11 +80,11 @@ static void draw_content(BaseView *base) {
     // Draw waveform line segments with hue based on amplitude
     for (int i = 0; i < WAVEFORM_DISPLAY_POINTS - 1; i++) {
         Vector2 p1 = { x0 + (float) i / WAVEFORM_DISPLAY_POINTS * width,
-                       mid_y - view->smoothed_waveform[i] * half };
+                       mid_y - display[i] * half };
         Vector2 p2 = { x0 + (float) (i + 1) / WAVEFORM_DISPLAY_POINTS * width,
-                       mid_y - view->smoothed_waveform[i + 1] * half };
+                       mid_y - display[i + 1] * half };
 
-        float normalized = fminf(fabsf(view->smoothed_waveform[i]), 1.0f);
+        float normalized = fabsf(display[i]);
         Color line = color_theme_amplitude_color(base->color_theme, normalized, 1.0f, 1.0f, 1.0f);
         DrawLineEx(p1, p2, 2.0f, line);
     }
@@ -81,6 +103,7 @@ static void draw_grid(BaseView *base) {
 static void reset(BaseView *base) {
     WaveformView *view = (WaveformView *) base;
     memset(view->smoothed_waveform, 0, sizeof(view->smoothed_waveform));
+    view->peak_envelope = 0;
 }
 
 static const BaseViewVTable WAVEFORM_VTABLE = { draw_content, draw_grid, reset };
